@@ -1,0 +1,349 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account profile for Together GPS",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "inviteCode": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "partnerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "email", "inviteCode", "createdAt", "updatedAt"]
+    },
+    "PairingCode": {
+      "title": "PairingCode",
+      "description": "Invite code / QR token for 2-person private pairing",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "ownerPhotoUrl": { "type": "string" },
+        "ownerPhone": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "partnerUid": { "type": "string" },
+        "partnerName": { "type": "string" },
+        "partnerPhotoUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["waiting", "paired", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "ownerUid", "ownerName", "status", "createdAt", "updatedAt"]
+    },
+    "Connection": {
+      "title": "Connection",
+      "description": "Private 2-person connection link (maximum 2 accounts)",
+      "type": "object",
+      "properties": {
+        "memberUids": { "type": "array" },
+        "memberNames": { "type": "object" },
+        "memberPhotos": { "type": "object" },
+        "memberPhones": { "type": "object" },
+        "inviteCode": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "disconnected"] },
+        "createdBy": { "type": "string" },
+        "disconnectedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["memberUids", "inviteCode", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "LiveLocation": {
+      "title": "LiveLocation",
+      "description": "Real-time and last-known GPS state for a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "authorizedPartnerUid": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "accuracyMeters": { "type": "number" },
+        "speedMps": { "type": "number" },
+        "bearing": { "type": "number" },
+        "moving": { "type": "boolean" },
+        "gpsInterrupted": { "type": "boolean" },
+        "sharingMode": { "type": "string", "enum": ["CONTINUOUS", "ONE_HOUR", "EIGHT_HOURS", "TWENTY_FOUR_HOURS", "PAUSED", "OFF"] },
+        "sharingExpiresAtMs": { "type": "integer" },
+        "address": { "type": "string" },
+        "currentPlaceName": { "type": "string" },
+        "arrivedAtPlaceTimeMs": { "type": "integer" },
+        "clientUpdatedAtMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "latitude", "longitude", "accuracyMeters", "speedMps", "bearing", "moving", "gpsInterrupted", "sharingMode", "clientUpdatedAtMs", "createdAt", "updatedAt"]
+    },
+    "DeviceStatus": {
+      "title": "DeviceStatus",
+      "description": "Battery, connectivity heartbeat, and movement state of a user device",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "authorizedPartnerUid": { "type": "string" },
+        "batteryPercent": { "type": "integer" },
+        "chargingState": { "type": "string", "enum": ["CHARGING", "DISCHARGING", "FULL"] },
+        "connectionState": { "type": "string", "enum": ["ONLINE", "OFFLINE", "DISCONNECTED", "SYNCING"] },
+        "locationUpdating": { "type": "boolean" },
+        "locationInterrupted": { "type": "boolean" },
+        "movementState": { "type": "string", "enum": ["STILL", "MOVING", "UNKNOWN"] },
+        "estimatedSpeedKmh": { "type": "number" },
+        "stationarySinceMs": { "type": "integer" },
+        "movingSinceMs": { "type": "integer" },
+        "nearestPlaceName": { "type": "string" },
+        "lastHeartbeatMs": { "type": "integer" },
+        "lastBatteryUpdateMs": { "type": "integer" },
+        "lastAppActiveMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "batteryPercent", "chargingState", "connectionState", "locationUpdating", "locationInterrupted", "movementState", "estimatedSpeedKmh", "lastHeartbeatMs", "lastBatteryUpdateMs", "lastAppActiveMs", "createdAt", "updatedAt"]
+    },
+    "SharingPermission": {
+      "title": "SharingPermission",
+      "description": "User privacy, GPS power mode, and notification preferences",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "authorizedPartnerUid": { "type": "string" },
+        "sharingMode": { "type": "string", "enum": ["CONTINUOUS", "ONE_HOUR", "EIGHT_HOURS", "TWENTY_FOUR_HOURS", "PAUSED", "OFF"] },
+        "sharingExpiresAtMs": { "type": "integer" },
+        "gpsPowerMode": { "type": "string", "enum": ["HIGH_ACCURACY", "BALANCED", "BATTERY_SAVER"] },
+        "updateIntervalSec": { "type": "integer" },
+        "shareLocation": { "type": "boolean" },
+        "shareBattery": { "type": "boolean" },
+        "shareMovement": { "type": "boolean" },
+        "shareActivities": { "type": "boolean" },
+        "shareHistory": { "type": "boolean" },
+        "historyRetentionDays": { "type": "integer" },
+        "notifyArrival": { "type": "boolean" },
+        "notifyDeparture": { "type": "boolean" },
+        "notifyCheckin": { "type": "boolean" },
+        "notifyLowBattery": { "type": "boolean" },
+        "notifyOffline": { "type": "boolean" },
+        "notifyOnline": { "type": "boolean" },
+        "notifySharingChange": { "type": "boolean" },
+        "notifyActivityNote": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "sharingMode", "gpsPowerMode", "updateIntervalSec", "shareLocation", "shareBattery", "shareMovement", "shareActivities", "shareHistory", "historyRetentionDays", "notifyArrival", "notifyDeparture", "notifyCheckin", "notifyLowBattery", "notifyOffline", "notifyOnline", "notifySharingChange", "notifyActivityNote", "createdAt", "updatedAt"]
+    },
+    "ActivityEvent": {
+      "title": "ActivityEvent",
+      "description": "Shared timeline event between the paired users",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "actorName": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "type": { "type": "string", "enum": ["MOVING", "ARRIVED_PLACE", "LEFT_PLACE", "CHECKIN", "SHARING_STARTED", "SHARING_PAUSED", "LOW_BATTERY", "CHARGING", "LOST_CONNECTION", "BACK_ONLINE", "NOTE"] },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "placeName": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "dateKey": { "type": "string" },
+        "eventTimeMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "actorName", "connectionId", "memberUids", "type", "title", "description", "dateKey", "eventTimeMs", "createdAt", "updatedAt"]
+    },
+    "LocationHistoryEntry": {
+      "title": "LocationHistoryEntry",
+      "description": "Recorded route point or stop in shared movement history",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "dateKey": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "accuracyMeters": { "type": "number" },
+        "speedMps": { "type": "number" },
+        "address": { "type": "string" },
+        "stopPoint": { "type": "boolean" },
+        "stopDurationMinutes": { "type": "integer" },
+        "recordedAtMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "connectionId", "memberUids", "dateKey", "latitude", "longitude", "accuracyMeters", "speedMps", "stopPoint", "stopDurationMinutes", "recordedAtMs", "createdAt"]
+    },
+    "ImportantPlace": {
+      "title": "ImportantPlace",
+      "description": "Shared geofenced important place",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["HOME", "WORK", "SCHOOL", "MEETING", "CUSTOM"] },
+        "address": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "radiusMeters": { "type": "integer" },
+        "notifyOnArrive": { "type": "boolean" },
+        "notifyOnLeave": { "type": "boolean" },
+        "notifyWhileInside": { "type": "boolean" },
+        "leaveWindowAlertEnabled": { "type": "boolean" },
+        "leaveWindowStartHour": { "type": "integer" },
+        "leaveWindowEndHour": { "type": "integer" },
+        "notificationsEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "connectionId", "memberUids", "name", "category", "latitude", "longitude", "radiusMeters", "notifyOnArrive", "notifyOnLeave", "notifyWhileInside", "leaveWindowAlertEnabled", "leaveWindowStartHour", "leaveWindowEndHour", "notificationsEnabled", "createdAt", "updatedAt"]
+    },
+    "CheckIn": {
+      "title": "CheckIn",
+      "description": "Photo check-in record with location and timestamp",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "placeName": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "note": { "type": "string" },
+        "albumScope": { "type": "string", "enum": ["SHARED", "PERSONAL"] },
+        "tripId": { "type": "string" },
+        "photoCount": { "type": "integer" },
+        "primaryPhotoBase64": { "type": "string" },
+        "capturedAtMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "authorName", "connectionId", "memberUids", "placeName", "latitude", "longitude", "albumScope", "photoCount", "capturedAtMs", "createdAt", "updatedAt"]
+    },
+    "MemoryPhoto": {
+      "title": "MemoryPhoto",
+      "description": "Memory photo stored in personal, shared, place, or trip album",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "checkinId": { "type": "string" },
+        "tripId": { "type": "string" },
+        "albumType": { "type": "string", "enum": ["PERSONAL", "SHARED", "PLACE", "TRIP"] },
+        "placeName": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "caption": { "type": "string" },
+        "imageBase64": { "type": "string" },
+        "capturedAtMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "connectionId", "memberUids", "checkinId", "albumType", "placeName", "latitude", "longitude", "imageBase64", "capturedAtMs", "createdAt"]
+    },
+    "TripJournal": {
+      "title": "TripJournal",
+      "description": "Shared trip journal connecting check-ins, notes, and dates",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "title": { "type": "string" },
+        "destination": { "type": "string" },
+        "startDateMs": { "type": "integer" },
+        "endDateMs": { "type": "integer" },
+        "notes": { "type": "string" },
+        "participantNames": { "type": "array" },
+        "coverPhotoBase64": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "connectionId", "memberUids", "title", "destination", "startDateMs", "endDateMs", "participantNames", "createdAt", "updatedAt"]
+    },
+    "NotificationItem": {
+      "title": "NotificationItem",
+      "description": "Cross-device notification record for important events",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "recipientUid": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "placeName": { "type": "string" },
+        "readFlag": { "type": "boolean" },
+        "createdAtMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "recipientUid", "connectionId", "memberUids", "type", "title", "body", "readFlag", "createdAtMs", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile document owned by userId"
+    },
+    "/pairing_codes/{code}": {
+      "schema": { "$ref": "#/entities/PairingCode" },
+      "description": "Invite code documents for pairing 2 users"
+    },
+    "/connections/{connectionId}": {
+      "schema": { "$ref": "#/entities/Connection" },
+      "description": "Private 2-person connection documents"
+    },
+    "/locations/{userId}": {
+      "schema": { "$ref": "#/entities/LiveLocation" },
+      "description": "Live GPS location per user, shared only with authorizedPartnerUid"
+    },
+    "/device_status/{userId}": {
+      "schema": { "$ref": "#/entities/DeviceStatus" },
+      "description": "Battery, connectivity, and movement state per user"
+    },
+    "/sharing_permissions/{userId}": {
+      "schema": { "$ref": "#/entities/SharingPermission" },
+      "description": "Sharing, GPS power, and notification preferences per user"
+    },
+    "/activities/{activityId}": {
+      "schema": { "$ref": "#/entities/ActivityEvent" },
+      "description": "Shared activity timeline events"
+    },
+    "/location_history/{entryId}": {
+      "schema": { "$ref": "#/entities/LocationHistoryEntry" },
+      "description": "Recorded GPS route points and stops"
+    },
+    "/places/{placeId}": {
+      "schema": { "$ref": "#/entities/ImportantPlace" },
+      "description": "Important geofenced places shared between the 2 users"
+    },
+    "/checkins/{checkinId}": {
+      "schema": { "$ref": "#/entities/CheckIn" },
+      "description": "Memory photo check-ins"
+    },
+    "/memories/{memoryId}": {
+      "schema": { "$ref": "#/entities/MemoryPhoto" },
+      "description": "Photos in personal, shared, place, or trip albums"
+    },
+    "/trips/{tripId}": {
+      "schema": { "$ref": "#/entities/TripJournal" },
+      "description": "Shared trip journals"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/NotificationItem" },
+      "description": "In-app and push-style notifications between paired users"
+    }
+  }
+}

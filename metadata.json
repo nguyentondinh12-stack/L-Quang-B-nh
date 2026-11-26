@@ -1,0 +1,6 @@
+{
+  "name": "Together GPS",
+  "description": "Ứng dụng kết nối riêng tư 2 người với chia sẻ vị trí GPS thời gian thực, trạng thái thiết bị, địa điểm quan trọng, lịch sử di chuyển và check-in kỷ niệm.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

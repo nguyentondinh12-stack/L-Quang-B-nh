@@ -1,0 +1,561 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HELPERS ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidCode(code) {
+      return code is string && code.size() >= 6 && code.size() <= 12 && code.matches('^[A-Z0-9]+$');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isActiveConnection(connectionId) {
+      return isValidId(connectionId) &&
+             exists(/databases/$(database)/documents/connections/$(connectionId)) &&
+             get(/databases/$(database)/documents/connections/$(connectionId)).data.status == 'active' &&
+             request.auth.uid in get(/databases/$(database)/documents/connections/$(connectionId)).data.memberUids;
+    }
+
+    function isBoundedString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isOptionalString(data, key, maxLen) {
+      return !(key in data) || data[key] == null || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function isOptionalInt(data, key) {
+      return !(key in data) || data[key] == null || data[key] is int;
+    }
+
+    function isValidSharingMode(mode) {
+      return mode in ['CONTINUOUS', 'ONE_HOUR', 'EIGHT_HOURS', 'TWENTY_FOUR_HOURS', 'PAUSED', 'OFF'];
+    }
+
+    // --- ENTITY VALIDATORS ---
+
+    function isValidUserProfile(data) {
+      return isValidId(data.userId) &&
+             isBoundedString(data.displayName, 1, 80) &&
+             isBoundedString(data.email, 3, 160) &&
+             isValidCode(data.inviteCode) &&
+             isOptionalString(data, 'photoUrl', 1000) &&
+             isOptionalString(data, 'phoneNumber', 32) &&
+             isOptionalString(data, 'connectionId', 128) &&
+             isOptionalString(data, 'partnerId', 128) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPairingCode(data) {
+      return isValidCode(data.code) &&
+             isValidId(data.ownerUid) &&
+             isBoundedString(data.ownerName, 1, 80) &&
+             data.status in ['waiting', 'paired', 'cancelled'] &&
+             isOptionalString(data, 'ownerPhotoUrl', 1000) &&
+             isOptionalString(data, 'ownerPhone', 32) &&
+             isOptionalString(data, 'connectionId', 128) &&
+             isOptionalString(data, 'partnerUid', 128) &&
+             isOptionalString(data, 'partnerName', 80) &&
+             isOptionalString(data, 'partnerPhotoUrl', 1000) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidConnection(data) {
+      return data.memberUids is list &&
+             data.memberUids.size() == 2 &&
+             isValidId(data.memberUids[0]) &&
+             isValidId(data.memberUids[1]) &&
+             data.memberUids[0] != data.memberUids[1] &&
+             isValidCode(data.inviteCode) &&
+             data.status in ['active', 'disconnected'] &&
+             isValidId(data.createdBy) &&
+             (!('memberNames' in data) || data.memberNames is map) &&
+             (!('memberPhotos' in data) || data.memberPhotos is map) &&
+             (!('memberPhones' in data) || data.memberPhones is map) &&
+             isOptionalString(data, 'disconnectedBy', 128) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidLocation(data) {
+      return isValidId(data.userId) &&
+             isOptionalString(data, 'connectionId', 128) &&
+             isOptionalString(data, 'authorizedPartnerUid', 128) &&
+             (data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0) &&
+             (data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0) &&
+             (data.accuracyMeters is number && data.accuracyMeters >= 0.0 && data.accuracyMeters <= 50000.0) &&
+             (data.speedMps is number && data.speedMps >= 0.0 && data.speedMps <= 500.0) &&
+             (data.bearing is number && data.bearing >= 0.0 && data.bearing <= 360.0) &&
+             data.moving is bool &&
+             data.gpsInterrupted is bool &&
+             isValidSharingMode(data.sharingMode) &&
+             isOptionalInt(data, 'sharingExpiresAtMs') &&
+             isOptionalString(data, 'address', 300) &&
+             isOptionalString(data, 'currentPlaceName', 120) &&
+             isOptionalInt(data, 'arrivedAtPlaceTimeMs') &&
+             data.clientUpdatedAtMs is int &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidDeviceStatus(data) {
+      return isValidId(data.userId) &&
+             isOptionalString(data, 'connectionId', 128) &&
+             isOptionalString(data, 'authorizedPartnerUid', 128) &&
+             (data.batteryPercent is int && data.batteryPercent >= 0 && data.batteryPercent <= 100) &&
+             data.chargingState in ['CHARGING', 'DISCHARGING', 'FULL'] &&
+             data.connectionState in ['ONLINE', 'OFFLINE', 'DISCONNECTED', 'SYNCING'] &&
+             data.locationUpdating is bool &&
+             data.locationInterrupted is bool &&
+             data.movementState in ['STILL', 'MOVING', 'UNKNOWN'] &&
+             (data.estimatedSpeedKmh is number && data.estimatedSpeedKmh >= 0.0 && data.estimatedSpeedKmh <= 1200.0) &&
+             isOptionalInt(data, 'stationarySinceMs') &&
+             isOptionalInt(data, 'movingSinceMs') &&
+             isOptionalString(data, 'nearestPlaceName', 120) &&
+             data.lastHeartbeatMs is int &&
+             data.lastBatteryUpdateMs is int &&
+             data.lastAppActiveMs is int &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSharingPermission(data) {
+      return isValidId(data.userId) &&
+             isOptionalString(data, 'connectionId', 128) &&
+             isOptionalString(data, 'authorizedPartnerUid', 128) &&
+             isValidSharingMode(data.sharingMode) &&
+             isOptionalInt(data, 'sharingExpiresAtMs') &&
+             data.gpsPowerMode in ['HIGH_ACCURACY', 'BALANCED', 'BATTERY_SAVER'] &&
+             (data.updateIntervalSec is int && data.updateIntervalSec >= 3 && data.updateIntervalSec <= 600) &&
+             data.shareLocation is bool &&
+             data.shareBattery is bool &&
+             data.shareMovement is bool &&
+             data.shareActivities is bool &&
+             data.shareHistory is bool &&
+             (data.historyRetentionDays is int && data.historyRetentionDays >= 1 && data.historyRetentionDays <= 365) &&
+             data.notifyArrival is bool &&
+             data.notifyDeparture is bool &&
+             data.notifyCheckin is bool &&
+             data.notifyLowBattery is bool &&
+             data.notifyOffline is bool &&
+             data.notifyOnline is bool &&
+             data.notifySharingChange is bool &&
+             data.notifyActivityNote is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidActivity(data) {
+      return isValidId(data.userId) &&
+             isBoundedString(data.actorName, 1, 80) &&
+             isValidId(data.connectionId) &&
+             data.memberUids is list && data.memberUids.size() >= 1 && data.memberUids.size() <= 2 &&
+             data.type in ['MOVING', 'ARRIVED_PLACE', 'LEFT_PLACE', 'CHECKIN', 'SHARING_STARTED', 'SHARING_PAUSED', 'LOW_BATTERY', 'CHARGING', 'LOST_CONNECTION', 'BACK_ONLINE', 'NOTE'] &&
+             isBoundedString(data.title, 1, 140) &&
+             isBoundedString(data.description, 0, 500) &&
+             isOptionalString(data, 'placeName', 120) &&
+             (!('latitude' in data) || data.latitude == null || data.latitude is number) &&
+             (!('longitude' in data) || data.longitude == null || data.longitude is number) &&
+             isBoundedString(data.dateKey, 8, 12) &&
+             data.eventTimeMs is int &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidLocationHistory(data) {
+      return isValidId(data.userId) &&
+             isValidId(data.connectionId) &&
+             data.memberUids is list && data.memberUids.size() >= 1 && data.memberUids.size() <= 2 &&
+             isBoundedString(data.dateKey, 8, 12) &&
+             (data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0) &&
+             (data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0) &&
+             (data.accuracyMeters is number && data.accuracyMeters >= 0.0) &&
+             (data.speedMps is number && data.speedMps >= 0.0) &&
+             isOptionalString(data, 'address', 300) &&
+             data.stopPoint is bool &&
+             (data.stopDurationMinutes is int && data.stopDurationMinutes >= 0 && data.stopDurationMinutes <= 10080) &&
+             data.recordedAtMs is int &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidPlace(data) {
+      return isValidId(data.userId) &&
+             isValidId(data.connectionId) &&
+             data.memberUids is list && data.memberUids.size() == 2 &&
+             isBoundedString(data.name, 1, 100) &&
+             data.category in ['HOME', 'WORK', 'SCHOOL', 'MEETING', 'CUSTOM'] &&
+             isOptionalString(data, 'address', 300) &&
+             (data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0) &&
+             (data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0) &&
+             (data.radiusMeters is int && data.radiusMeters >= 50 && data.radiusMeters <= 5000) &&
+             data.notifyOnArrive is bool &&
+             data.notifyOnLeave is bool &&
+             data.notifyWhileInside is bool &&
+             data.leaveWindowAlertEnabled is bool &&
+             (data.leaveWindowStartHour is int && data.leaveWindowStartHour >= 0 && data.leaveWindowStartHour <= 23) &&
+             (data.leaveWindowEndHour is int && data.leaveWindowEndHour >= 0 && data.leaveWindowEndHour <= 23) &&
+             data.notificationsEnabled is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCheckIn(data) {
+      return isValidId(data.userId) &&
+             isBoundedString(data.authorName, 1, 80) &&
+             isValidId(data.connectionId) &&
+             data.memberUids is list && data.memberUids.size() >= 1 && data.memberUids.size() <= 2 &&
+             isBoundedString(data.placeName, 1, 140) &&
+             (data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0) &&
+             (data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0) &&
+             isOptionalString(data, 'note', 500) &&
+             data.albumScope in ['SHARED', 'PERSONAL'] &&
+             isOptionalString(data, 'tripId', 128) &&
+             (data.photoCount is int && data.photoCount >= 0 && data.photoCount <= 10) &&
+             isOptionalString(data, 'primaryPhotoBase64', 700000) &&
+             data.capturedAtMs is int &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMemory(data) {
+      return isValidId(data.userId) &&
+             isValidId(data.connectionId) &&
+             data.memberUids is list && data.memberUids.size() >= 1 && data.memberUids.size() <= 2 &&
+             isValidId(data.checkinId) &&
+             isOptionalString(data, 'tripId', 128) &&
+             data.albumType in ['PERSONAL', 'SHARED', 'PLACE', 'TRIP'] &&
+             isBoundedString(data.placeName, 1, 140) &&
+             (data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0) &&
+             (data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0) &&
+             isOptionalString(data, 'caption', 300) &&
+             isBoundedString(data.imageBase64, 10, 700000) &&
+             data.capturedAtMs is int &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidTrip(data) {
+      return isValidId(data.userId) &&
+             isValidId(data.connectionId) &&
+             data.memberUids is list && data.memberUids.size() >= 1 && data.memberUids.size() <= 2 &&
+             isBoundedString(data.title, 1, 120) &&
+             isBoundedString(data.destination, 1, 140) &&
+             data.startDateMs is int &&
+             data.endDateMs is int &&
+             data.endDateMs >= data.startDateMs &&
+             isOptionalString(data, 'notes', 2000) &&
+             data.participantNames is list && data.participantNames.size() >= 1 && data.participantNames.size() <= 2 &&
+             isOptionalString(data, 'coverPhotoBase64', 700000) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidNotification(data) {
+      return isValidId(data.senderId) &&
+             isValidId(data.recipientUid) &&
+             isValidId(data.connectionId) &&
+             data.memberUids is list && data.memberUids.size() == 2 &&
+             isBoundedString(data.type, 1, 50) &&
+             isBoundedString(data.title, 1, 140) &&
+             isBoundedString(data.body, 1, 400) &&
+             isOptionalString(data, 'placeName', 120) &&
+             data.readFlag is bool &&
+             data.createdAtMs is int &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // --- COLLECTION RULES ---
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'email', 'inviteCode', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'photoUrl', 'phoneNumber', 'inviteCode', 'connectionId', 'partnerId', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'photoUrl', 'phoneNumber', 'inviteCode', 'connectionId', 'partnerId', 'updatedAt']);
+      allow delete: if isOwner(userId) && isValidId(userId);
+    }
+
+    match /pairing_codes/{code} {
+      allow get: if isSignedIn() && isValidCode(code);
+      allow list: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if isSignedIn() &&
+                       isValidCode(code) &&
+                       incoming().code == code &&
+                       incoming().ownerUid == request.auth.uid &&
+                       incoming().status == 'waiting' &&
+                       incoming().keys().hasAll(['code', 'ownerUid', 'ownerName', 'status', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['code', 'ownerUid', 'ownerName', 'ownerPhotoUrl', 'ownerPhone', 'connectionId', 'partnerUid', 'partnerName', 'partnerPhotoUrl', 'status', 'createdAt', 'updatedAt']) &&
+                       isValidPairingCode(incoming());
+      allow update: if isSignedIn() && isValidCode(code) && isValidPairingCode(incoming()) &&
+                       incoming().code == existing().code &&
+                       incoming().ownerUid == existing().ownerUid &&
+                       incoming().createdAt == existing().createdAt && (
+                         (existing().ownerUid == request.auth.uid &&
+                          existing().status == 'waiting' &&
+                          incoming().status == 'cancelled' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+                         (existing().status == 'waiting' &&
+                          existing().ownerUid != request.auth.uid &&
+                          incoming().status == 'paired' &&
+                          incoming().partnerUid == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'partnerUid', 'partnerName', 'partnerPhotoUrl', 'connectionId', 'updatedAt']))
+                       );
+      allow delete: if isSignedIn() && isValidCode(code) && existing().ownerUid == request.auth.uid;
+    }
+
+    match /connections/{connectionId} {
+      allow get: if isSignedIn() && isValidId(connectionId) && request.auth.uid in existing().memberUids;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isSignedIn() &&
+                       isValidId(connectionId) &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().createdBy == request.auth.uid &&
+                       incoming().status == 'active' &&
+                       incoming().keys().hasAll(['memberUids', 'inviteCode', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['memberUids', 'memberNames', 'memberPhotos', 'memberPhones', 'inviteCode', 'status', 'createdBy', 'disconnectedBy', 'createdAt', 'updatedAt']) &&
+                       isValidConnection(incoming());
+      allow update: if isSignedIn() &&
+                       isValidId(connectionId) &&
+                       request.auth.uid in existing().memberUids &&
+                       existing().status == 'active' &&
+                       isValidConnection(incoming()) &&
+                       incoming().memberUids == existing().memberUids &&
+                       incoming().inviteCode == existing().inviteCode &&
+                       incoming().createdBy == existing().createdBy &&
+                       incoming().createdAt == existing().createdAt && (
+                         (incoming().status == 'active' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['memberNames', 'memberPhotos', 'memberPhones', 'updatedAt'])) ||
+                         (incoming().status == 'disconnected' &&
+                          incoming().disconnectedBy == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'disconnectedBy', 'updatedAt']))
+                       );
+      allow delete: if false;
+    }
+
+    match /locations/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (userId == request.auth.uid || ('authorizedPartnerUid' in existing() && existing().authorizedPartnerUid == request.auth.uid));
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || ('authorizedPartnerUid' in resource.data && resource.data.authorizedPartnerUid == request.auth.uid));
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'latitude', 'longitude', 'accuracyMeters', 'speedMps', 'bearing', 'moving', 'gpsInterrupted', 'sharingMode', 'clientUpdatedAtMs', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'connectionId', 'authorizedPartnerUid', 'latitude', 'longitude', 'accuracyMeters', 'speedMps', 'bearing', 'moving', 'gpsInterrupted', 'sharingMode', 'sharingExpiresAtMs', 'address', 'currentPlaceName', 'arrivedAtPlaceTimeMs', 'clientUpdatedAtMs', 'createdAt', 'updatedAt']) &&
+                       isValidLocation(incoming());
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidLocation(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['connectionId', 'authorizedPartnerUid', 'latitude', 'longitude', 'accuracyMeters', 'speedMps', 'bearing', 'moving', 'gpsInterrupted', 'sharingMode', 'sharingExpiresAtMs', 'address', 'currentPlaceName', 'arrivedAtPlaceTimeMs', 'clientUpdatedAtMs', 'updatedAt']);
+      allow delete: if isOwner(userId) && isValidId(userId);
+    }
+
+    match /device_status/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (userId == request.auth.uid || ('authorizedPartnerUid' in existing() && existing().authorizedPartnerUid == request.auth.uid));
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || ('authorizedPartnerUid' in resource.data && resource.data.authorizedPartnerUid == request.auth.uid));
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'batteryPercent', 'chargingState', 'connectionState', 'locationUpdating', 'locationInterrupted', 'movementState', 'estimatedSpeedKmh', 'lastHeartbeatMs', 'lastBatteryUpdateMs', 'lastAppActiveMs', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'connectionId', 'authorizedPartnerUid', 'batteryPercent', 'chargingState', 'connectionState', 'locationUpdating', 'locationInterrupted', 'movementState', 'estimatedSpeedKmh', 'stationarySinceMs', 'movingSinceMs', 'nearestPlaceName', 'lastHeartbeatMs', 'lastBatteryUpdateMs', 'lastAppActiveMs', 'createdAt', 'updatedAt']) &&
+                       isValidDeviceStatus(incoming());
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidDeviceStatus(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['connectionId', 'authorizedPartnerUid', 'batteryPercent', 'chargingState', 'connectionState', 'locationUpdating', 'locationInterrupted', 'movementState', 'estimatedSpeedKmh', 'stationarySinceMs', 'movingSinceMs', 'nearestPlaceName', 'lastHeartbeatMs', 'lastBatteryUpdateMs', 'lastAppActiveMs', 'updatedAt']);
+      allow delete: if isOwner(userId) && isValidId(userId);
+    }
+
+    match /sharing_permissions/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (userId == request.auth.uid || ('authorizedPartnerUid' in existing() && existing().authorizedPartnerUid == request.auth.uid));
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || ('authorizedPartnerUid' in resource.data && resource.data.authorizedPartnerUid == request.auth.uid));
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'sharingMode', 'gpsPowerMode', 'updateIntervalSec', 'shareLocation', 'shareBattery', 'shareMovement', 'shareActivities', 'shareHistory', 'historyRetentionDays', 'notifyArrival', 'notifyDeparture', 'notifyCheckin', 'notifyLowBattery', 'notifyOffline', 'notifyOnline', 'notifySharingChange', 'notifyActivityNote', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'connectionId', 'authorizedPartnerUid', 'sharingMode', 'sharingExpiresAtMs', 'gpsPowerMode', 'updateIntervalSec', 'shareLocation', 'shareBattery', 'shareMovement', 'shareActivities', 'shareHistory', 'historyRetentionDays', 'notifyArrival', 'notifyDeparture', 'notifyCheckin', 'notifyLowBattery', 'notifyOffline', 'notifyOnline', 'notifySharingChange', 'notifyActivityNote', 'createdAt', 'updatedAt']) &&
+                       isValidSharingPermission(incoming());
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidSharingPermission(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['connectionId', 'authorizedPartnerUid', 'sharingMode', 'sharingExpiresAtMs', 'gpsPowerMode', 'updateIntervalSec', 'shareLocation', 'shareBattery', 'shareMovement', 'shareActivities', 'shareHistory', 'historyRetentionDays', 'notifyArrival', 'notifyDeparture', 'notifyCheckin', 'notifyLowBattery', 'notifyOffline', 'notifyOnline', 'notifySharingChange', 'notifyActivityNote', 'updatedAt']);
+      allow delete: if isOwner(userId) && isValidId(userId);
+    }
+
+    match /activities/{activityId} {
+      allow get: if isSignedIn() && isValidId(activityId) && (existing().userId == request.auth.uid || (request.auth.uid in existing().memberUids && isActiveConnection(existing().connectionId)));
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isSignedIn() &&
+                       isValidId(activityId) &&
+                       incoming().userId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().keys().hasAll(['userId', 'actorName', 'connectionId', 'memberUids', 'type', 'title', 'description', 'dateKey', 'eventTimeMs', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'actorName', 'connectionId', 'memberUids', 'type', 'title', 'description', 'placeName', 'latitude', 'longitude', 'dateKey', 'eventTimeMs', 'createdAt', 'updatedAt']) &&
+                       isValidActivity(incoming()) &&
+                       isActiveConnection(incoming().connectionId);
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(activityId) && existing().userId == request.auth.uid;
+    }
+
+    match /location_history/{entryId} {
+      allow get: if isSignedIn() && isValidId(entryId) && (existing().userId == request.auth.uid || (request.auth.uid in existing().memberUids && isActiveConnection(existing().connectionId)));
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isSignedIn() &&
+                       isValidId(entryId) &&
+                       incoming().userId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().keys().hasAll(['userId', 'connectionId', 'memberUids', 'dateKey', 'latitude', 'longitude', 'accuracyMeters', 'speedMps', 'stopPoint', 'stopDurationMinutes', 'recordedAtMs', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'connectionId', 'memberUids', 'dateKey', 'latitude', 'longitude', 'accuracyMeters', 'speedMps', 'address', 'stopPoint', 'stopDurationMinutes', 'recordedAtMs', 'createdAt']) &&
+                       isValidLocationHistory(incoming()) &&
+                       isActiveConnection(incoming().connectionId);
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(entryId) && existing().userId == request.auth.uid;
+    }
+
+    match /places/{placeId} {
+      allow get: if isSignedIn() && isValidId(placeId) && request.auth.uid in existing().memberUids && isActiveConnection(existing().connectionId);
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isSignedIn() &&
+                       isValidId(placeId) &&
+                       incoming().userId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().keys().hasAll(['userId', 'connectionId', 'memberUids', 'name', 'category', 'latitude', 'longitude', 'radiusMeters', 'notifyOnArrive', 'notifyOnLeave', 'notifyWhileInside', 'leaveWindowAlertEnabled', 'leaveWindowStartHour', 'leaveWindowEndHour', 'notificationsEnabled', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'connectionId', 'memberUids', 'name', 'category', 'address', 'latitude', 'longitude', 'radiusMeters', 'notifyOnArrive', 'notifyOnLeave', 'notifyWhileInside', 'leaveWindowAlertEnabled', 'leaveWindowStartHour', 'leaveWindowEndHour', 'notificationsEnabled', 'createdAt', 'updatedAt']) &&
+                       isValidPlace(incoming()) &&
+                       isActiveConnection(incoming().connectionId);
+      allow update: if isSignedIn() &&
+                       isValidId(placeId) &&
+                       request.auth.uid in existing().memberUids &&
+                       isValidPlace(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().connectionId == existing().connectionId &&
+                       incoming().memberUids == existing().memberUids &&
+                       incoming().createdAt == existing().createdAt &&
+                       isActiveConnection(existing().connectionId) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'category', 'address', 'latitude', 'longitude', 'radiusMeters', 'notifyOnArrive', 'notifyOnLeave', 'notifyWhileInside', 'leaveWindowAlertEnabled', 'leaveWindowStartHour', 'leaveWindowEndHour', 'notificationsEnabled', 'updatedAt']);
+      allow delete: if isSignedIn() && isValidId(placeId) && request.auth.uid in existing().memberUids;
+    }
+
+    match /checkins/{checkinId} {
+      allow get: if isSignedIn() && isValidId(checkinId) && (existing().userId == request.auth.uid || (request.auth.uid in existing().memberUids && isActiveConnection(existing().connectionId)));
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isSignedIn() &&
+                       isValidId(checkinId) &&
+                       incoming().userId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().keys().hasAll(['userId', 'authorName', 'connectionId', 'memberUids', 'placeName', 'latitude', 'longitude', 'albumScope', 'photoCount', 'capturedAtMs', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'authorName', 'connectionId', 'memberUids', 'placeName', 'latitude', 'longitude', 'note', 'albumScope', 'tripId', 'photoCount', 'primaryPhotoBase64', 'capturedAtMs', 'createdAt', 'updatedAt']) &&
+                       isValidCheckIn(incoming()) &&
+                       isActiveConnection(incoming().connectionId);
+      allow update: if isSignedIn() &&
+                       isValidId(checkinId) &&
+                       existing().userId == request.auth.uid &&
+                       isValidCheckIn(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().connectionId == existing().connectionId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['placeName', 'note', 'albumScope', 'memberUids', 'tripId', 'photoCount', 'primaryPhotoBase64', 'updatedAt']);
+      allow delete: if isSignedIn() && isValidId(checkinId) && existing().userId == request.auth.uid;
+    }
+
+    match /memories/{memoryId} {
+      allow get: if isSignedIn() && isValidId(memoryId) && (existing().userId == request.auth.uid || (request.auth.uid in existing().memberUids && isActiveConnection(existing().connectionId)));
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isSignedIn() &&
+                       isValidId(memoryId) &&
+                       incoming().userId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().keys().hasAll(['userId', 'connectionId', 'memberUids', 'checkinId', 'albumType', 'placeName', 'latitude', 'longitude', 'imageBase64', 'capturedAtMs', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'connectionId', 'memberUids', 'checkinId', 'tripId', 'albumType', 'placeName', 'latitude', 'longitude', 'caption', 'imageBase64', 'capturedAtMs', 'createdAt']) &&
+                       isValidMemory(incoming()) &&
+                       isActiveConnection(incoming().connectionId);
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(memoryId) && existing().userId == request.auth.uid;
+    }
+
+    match /trips/{tripId} {
+      allow get: if isSignedIn() && isValidId(tripId) && request.auth.uid in existing().memberUids && isActiveConnection(existing().connectionId);
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isSignedIn() &&
+                       isValidId(tripId) &&
+                       incoming().userId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().keys().hasAll(['userId', 'connectionId', 'memberUids', 'title', 'destination', 'startDateMs', 'endDateMs', 'participantNames', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'connectionId', 'memberUids', 'title', 'destination', 'startDateMs', 'endDateMs', 'notes', 'participantNames', 'coverPhotoBase64', 'createdAt', 'updatedAt']) &&
+                       isValidTrip(incoming()) &&
+                       isActiveConnection(incoming().connectionId);
+      allow update: if isSignedIn() &&
+                       isValidId(tripId) &&
+                       request.auth.uid in existing().memberUids &&
+                       isValidTrip(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().connectionId == existing().connectionId &&
+                       incoming().memberUids == existing().memberUids &&
+                       incoming().createdAt == existing().createdAt &&
+                       isActiveConnection(existing().connectionId) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['title', 'destination', 'startDateMs', 'endDateMs', 'notes', 'participantNames', 'coverPhotoBase64', 'updatedAt']);
+      allow delete: if isSignedIn() && isValidId(tripId) && request.auth.uid in existing().memberUids;
+    }
+
+    match /notifications/{notificationId} {
+      allow get: if isSignedIn() && isValidId(notificationId) && (existing().recipientUid == request.auth.uid || existing().senderId == request.auth.uid);
+      allow list: if isSignedIn() && resource.data.recipientUid == request.auth.uid;
+      allow create: if isSignedIn() &&
+                       isValidId(notificationId) &&
+                       incoming().senderId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().recipientUid in incoming().memberUids &&
+                       incoming().keys().hasAll(['senderId', 'recipientUid', 'connectionId', 'memberUids', 'type', 'title', 'body', 'readFlag', 'createdAtMs', 'createdAt']) &&
+                       incoming().keys().hasOnly(['senderId', 'recipientUid', 'connectionId', 'memberUids', 'type', 'title', 'body', 'placeName', 'readFlag', 'createdAtMs', 'createdAt']) &&
+                       isValidNotification(incoming()) &&
+                       isActiveConnection(incoming().connectionId);
+      allow update: if isSignedIn() &&
+                       isValidId(notificationId) &&
+                       existing().recipientUid == request.auth.uid &&
+                       isValidNotification(incoming()) &&
+                       incoming().senderId == existing().senderId &&
+                       incoming().recipientUid == existing().recipientUid &&
+                       incoming().connectionId == existing().connectionId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['readFlag']);
+      allow delete: if isSignedIn() && isValidId(notificationId) && existing().recipientUid == request.auth.uid;
+    }
+  }
+}

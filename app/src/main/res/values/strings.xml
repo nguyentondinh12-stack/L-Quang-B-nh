@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Together GPS</string>
+    <string name="tab_map">Bản đồ</string>
+    <string name="tab_activity">Hoạt động</string>
+    <string name="tab_memories">Kỷ niệm</string>
+    <string name="tab_profile">Cá nhân</string>
+    <string name="sign_in_google">Đăng nhập bằng Google</string>
+    <string name="notif_channel_location_name">Chia sẻ vị trí trực tiếp</string>
+    <string name="notif_channel_location_desc">Hiển thị khi Together GPS đang chia sẻ vị trí nền</string>
+    <string name="notif_channel_alerts_name">Thông báo từ người kia</string>
+    <string name="notif_channel_alerts_desc">Thông báo khi đến/rời địa điểm, check-in, pin thấp hoặc mất kết nối</string>
+</resources>
